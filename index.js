@@ -1,14 +1,11 @@
 const express = require('express');
-// const bodyParser = require('body-parser');
 const { MongoClient } = require('mongodb');
 
 const app = express();
 const port = 3000;
 
-// app.use(bodyParser.json());
 app.use(express.json());
 const connectToMongo = async (mongoUri) => {
-  // const client = new MongoClient(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
   const client = new MongoClient(mongoUri);
   await client.connect();
   return client;
