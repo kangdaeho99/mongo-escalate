@@ -106,7 +106,7 @@ app.post("/api/v1/db/aggregate", async (req, res) => {
     const uri = mongoUri;
 
     let evalData = eval(pipeline);
-    console.log(typeof(evalData), JSON.stringify(evalData, null, 2))
+    // console.log(typeof(evalData), JSON.stringify(evalData, null, 2))
     try {
         const client = await connectToMongo(uri);
         const database = client.db(databaseName);
@@ -125,13 +125,23 @@ app.post("/api/v1/db/explain", async (req, res) => {
     const { mongoUri, databaseName, collectionName, pipeline } = req.body;
     const uri = mongoUri || process.env.MONGO_URI;
 
+    let evalData = eval(pipeline);
+    // console.log(typeof(evalData), JSON.stringify(evalData, null, 2))
     try {
         const client = await connectToMongo(uri);
         const database = client.db(databaseName);
         const collection = database.collection(collectionName);
+        // const explainResult = await collection
+        //     .aggregate(pipeline)
+        //     .explain("executionStats");
+
+        // const explainResult = await collection
+        //     .aggregate(evalData)
+        //     .explain("executionStats");
         const explainResult = await collection
-            .aggregate(pipeline)
-            .explain("executionStats");
+                .aggregate(evalData)
+                .explain();
+
         await client.close();
         res.status(200).json(explainResult);
     } catch (error) {
