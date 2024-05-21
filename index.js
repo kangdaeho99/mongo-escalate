@@ -3,7 +3,7 @@ const { MongoClient } = require("mongodb");
 const cors = require("cors");
 
 const app = express();
-const port = 3001;
+const port = 3000;
 
 const corsOptions = {
     origin: "http://localhost:3000",
@@ -131,13 +131,6 @@ app.post("/api/v1/db/explain", async (req, res) => {
         const client = await connectToMongo(uri);
         const database = client.db(databaseName);
         const collection = database.collection(collectionName);
-        // const explainResult = await collection
-        //     .aggregate(pipeline)
-        //     .explain("executionStats");
-
-        // const explainResult = await collection
-        //     .aggregate(evalData)
-        //     .explain("executionStats");
         const explainResult = await collection
                 .aggregate(evalData)
                 .explain();
