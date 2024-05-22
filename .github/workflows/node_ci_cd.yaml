@@ -31,18 +31,18 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/mongoes:latest
           cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/mongoes:cache
           cache-to: type=inline
-          debug: true
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Deploy
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          debug: true
           script: |
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/mongoes:latest
             docker stop mongoes || true
