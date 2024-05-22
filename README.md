@@ -180,3 +180,39 @@ Body:
 ```json
 { "message": "Aggregation 실행 중 오류 발생" }
 ```
+
+# Collection Schema 타입 조회
+
+- 제공된 컬렉션의 스키마 변수명과 타입 조회
+
+URL: `/api/v1/db/schema`  
+Method: `POST`  
+Request Body:
+```json
+{
+  "mongoUri": "mongodb+srv://example.mongodb.net/",
+  "databaseName" : "sample_analytics",
+  "collectionName" :"transactions"
+}
+```
+Response:  
+Status Code: `200`  
+Body:
+```json
+{
+  "_id": { "BsonType": "Object" },
+  "account_id": { "BsonType": "Number" },
+  "transaction_count": { "BsonType": "Number" },
+  "bucket_start_date": { "BsonType": "Date" },
+  "bucket_end_date": { "BsonType": "Date" },
+  "transactions": { "BsonType": "Array" }
+}
+
+```
+
+실패 시:
+Status Code: `500 (서버 오류)` 또는  `400 (잘못된 요청)`
+Body:
+```json
+{ "message": "schema 조회시 오류 발생" }
+```

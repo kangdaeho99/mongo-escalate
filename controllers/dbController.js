@@ -1,4 +1,5 @@
 const { MongoClient } = require("mongodb");
+const tty = require("tty");
 
 const connectToMongo = async (mongoUri) => {
     const client = new MongoClient(mongoUri);
@@ -78,3 +79,64 @@ exports.explain = async (req, res) => {
         res.status(500).json({ message: "Explain 실행 중 오류 발생" });
     }
 };
+
+exports.getSampleSchema = async (req, res) => {
+    const { mongoUri, databaseName, collectionName } = req.body;
+    const uri = mongoUri || process.env.MONGO_URI;
+
+    const client  = await connectToMongo(uri);
+
+    try {
+        const database = client.db(databaseName);
+        const collection = database.collection(collectionName);
+
+        const sampleDoc = await collection.findOne();
+
+        if (!sampleDoc) {
+            console.log(`${collectionName} 컬렉션에 문서가 없습니다.`);
+            return;
+        }
+
+        const schema = extractSchema(sampleDoc);
+        console.log(schema);
+        res.status(200).json(schema);
+
+    } catch (error) {
+        console.error("schema 조회시 오류 발생:", error);
+        res.status(500).json({ message: "schema 조회시 오류 발생" });
+    } finally {
+        await client.close();
+    }
+}
+
+const extractSchema = (doc) => {
+    const schema = {};
+    for (const key in doc) {
+        if (doc.hasOwnProperty(key)) {
+            schema[key] = { BsonType: getBsonType(doc[key]) };
+        }
+    }
+    return schema;
+}
+
+const getBsonType = (value) => {
+    if (Array.isArray(value)) {
+        return 'Array';
+    }
+    if (typeof value === 'string') {
+        return 'String';
+    }
+    if (typeof value === 'number') {
+        return 'Number'; // 정수 및 부동 소수점 모두 'Int'로 처리 (필요 시 세분화 가능)
+    }
+    if (typeof value === 'boolean') {
+        return 'Boolean';
+    }
+    if (value instanceof Date) {
+        return 'Date';
+    }
+    if (typeof value === 'object') {
+        return 'Object';
+    }
+    return 'Unknown';
+}
