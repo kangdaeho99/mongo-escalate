@@ -46,9 +46,30 @@ exports.connectMongo = async (req, res) => {
 
 exports.aggregate = async (req, res) => {
     const { mongoUri, databaseName, collectionName, pipeline } = req.body;
+    let index = req.body.index;
     const uri = mongoUri;
 
-    let evalData = eval(pipeline);
+    let evalData;
+    try {
+        evalData = eval(pipeline);
+    } catch (error) {
+        console.error("JSON parsing error:", error);
+        return res.status(400).json({ message: "잘못된 파이프라인 형식" });
+    }
+    const hasLimit = evalData.some(stage => Object.hasOwnProperty.call(stage, '$limit'));
+    const hasSkip = evalData.some(stage => Object.hasOwnProperty.call(stage, '$skip'));
+
+    if (!hasLimit) {
+        evalData.push({ $limit: 10 });
+    }
+
+    if (index === undefined) {
+        index = 0;
+    }
+    if (!hasSkip) {
+        evalData.push({ $skip: index });
+    }
+    
     try {
         const client = await connectToMongo(uri);
         const database = client.db(databaseName);
