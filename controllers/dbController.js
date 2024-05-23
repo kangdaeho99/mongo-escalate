@@ -109,6 +109,71 @@ exports.getSampleSchema = async (req, res) => {
     }
 }
 
+exports.getCollectionCardinality = async (req, res) => {
+    const { mongoUri, databaseName, collectionName } = req.body;
+    const uri = mongoUri || process.env.MONGO_URI;
+
+    const client  = await connectToMongo(uri);
+
+    try {
+        const database = client.db(databaseName);
+        const collection = database.collection(collectionName);
+
+        const pipeline = [
+            {
+                $project: {
+                    document: "$$ROOT"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$document",
+                    includeArrayIndex: 'string'
+                }
+            },
+            {
+                $replaceRoot: { newRoot: "$document" }
+            },
+            {
+                $group: {
+                    _id: "$_id",
+                    keys: { $mergeObjects: "$$ROOT" }
+                }
+            },
+            {
+                $project: {
+                    keys: { $objectToArray: "$keys" }
+                }
+            },
+            {
+                $unwind: "$keys"
+            },
+            {
+                $group: {
+                    _id: "$keys.k",
+                    uniqueValues: { $addToSet: "$keys.v" }
+                }
+            },
+            {
+                $project: {
+                    _id: 1,
+                    cardinality: { $size: "$uniqueValues" }
+                }
+            }
+        ];
+
+        const result = await collection.aggregate(pipeline).toArray();
+        console.log(result);
+        res.status(200).json(result);
+
+    } catch (error) {
+        console.error("schema 조회시 오류 발생:", error);
+        res.status(500).json({ message: "schema 조회시 오류 발생" });
+    } finally {
+        await client.close();
+    }
+}
+
 const extractSchema = (doc) => {
     const schema = {};
     for (const key in doc) {
