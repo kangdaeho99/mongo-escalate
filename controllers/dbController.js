@@ -83,6 +83,8 @@ exports.aggregate = async (req, res) => {
     }
 };
 
+
+
 exports.explain = async (req, res) => {
     const { mongoUri, databaseName, collectionName, pipeline } = req.body;
     const uri = mongoUri || process.env.MONGO_URI;
@@ -130,10 +132,66 @@ exports.getSampleSchema = async (req, res) => {
     }
 }
 
-exports.getCollectionCardinality = async (req, res) => {
-    const { mongoUri, databaseName, collectionName } = req.body;
-    const uri = mongoUri || process.env.MONGO_URI;
+exports.recommend = async (req, res) => {
+    const { mongoUri, databaseName, collectionName, pipeline } = req.body;
+    const uri = mongoUri;
 
+    let evalData;
+    try {
+        evalData = eval(pipeline);
+    } catch (error) {
+        console.error("JSON parsing error:", error);
+        return res.status(400).json({ message: "잘못된 파이프라인 형식" });
+    }
+
+    try {
+        const cardinalities = await getCollectionCardinality(uri, databaseName, collectionName);
+        const cardinalityMap = cardinalities.reduce((map, item) => {
+            map[item._id] = item.cardinality;
+            return map;
+        }, {});
+
+        const matchStage = evalData.find(stage => Object.hasOwnProperty.call(stage, '$match'));
+
+        const matchCardinalities = {};
+        if (matchStage) {
+            for (const [key, value] of Object.entries(matchStage['$match'])) {
+                if (key !== '_id') {
+                    matchCardinalities[key] = cardinalityMap[key];
+                }
+            }
+        }
+        matchCardinalities["_id"] = cardinalityMap["_id"];
+
+        let maxCardinality = 0;
+        let bestIndexKey = null;
+        for (const [key, value] of Object.entries(matchCardinalities)) {
+            if (key !== '_id' && value > maxCardinality) {
+                maxCardinality = value;
+                bestIndexKey = key;
+            }
+        }
+
+        res.status(200).json({bestIndexKey, maxCardinality, matchCardinalities});
+    } catch (error) {
+        console.error("Aggregation 실행 중 오류 발생:", error);
+        res.status(500).json({ message: "Aggregation 실행 중 오류 발생" });
+    }
+};
+
+exports.getCardinality = async (req, res) => {
+    const { mongoUri, databaseName, collectionName } = req.body;
+
+    try {
+        const cardinality = await getCollectionCardinality(mongoUri, databaseName, collectionName);
+        res.status(200).json(cardinality);
+    } catch (error) {
+        console.error("카디널리티 계산 중 오류 발생:", error);
+        res.status(500).json({ message: "카디널리티 계산 중 오류 발생" });
+    }
+};
+
+const getCollectionCardinality = async (uri, databaseName, collectionName) => {
     const client  = await connectToMongo(uri);
 
     try {
@@ -184,12 +242,10 @@ exports.getCollectionCardinality = async (req, res) => {
         ];
 
         const result = await collection.aggregate(pipeline).toArray();
-        console.log(result);
-        res.status(200).json(result);
-
+        return result;
     } catch (error) {
         console.error("schema 조회시 오류 발생:", error);
-        res.status(500).json({ message: "schema 조회시 오류 발생" });
+        throw new Error("schema 조회시 오류 발생");
     } finally {
         await client.close();
     }
