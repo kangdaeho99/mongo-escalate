@@ -191,6 +191,25 @@ exports.getCardinality = async (req, res) => {
     }
 };
 
+exports.createIndexOnKey = async (req, res) => {
+    const { mongoUri, databaseName, collectionName, targetKey } = req.body;
+
+    const client  = await connectToMongo(mongoUri);
+
+    try {
+        const database = client.db(databaseName);
+        const collection = database.collection(collectionName);
+
+        const result = await collection.createIndex({ [targetKey]: 1 });
+    } catch (error) {
+        console.error("인덱스 생성 시 오류 발생:", error);
+        throw new Error("인덱스 생성 시 오류 발생");
+    } finally {
+        await client.close();
+    }
+
+}
+
 const getCollectionCardinality = async (uri, databaseName, collectionName) => {
     const client  = await connectToMongo(uri);
 
