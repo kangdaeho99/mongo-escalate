@@ -200,12 +200,54 @@ Status Code: `200`
 Body:
 ```json
 {
-  "_id": { "BsonType": "Object" },
-  "account_id": { "BsonType": "Number" },
-  "transaction_count": { "BsonType": "Number" },
-  "bucket_start_date": { "BsonType": "Date" },
-  "bucket_end_date": { "BsonType": "Date" },
-  "transactions": { "BsonType": "Array" }
+  "_id": {
+    "BsonType": "ObjectId",
+    "Index": {
+      "hasIndex": false,
+      "indexName": null
+    },
+    "Cardinality": 1746
+  },
+  "account_id": {
+    "BsonType": "Int32",
+    "Index": {
+      "hasIndex": false,
+      "indexName": null
+    },
+    "Cardinality": 1745
+  },
+  "transaction_count": {
+    "BsonType": "Int32",
+    "Index": {
+      "hasIndex": false,
+      "indexName": null
+    },
+    "Cardinality": 100
+  },
+  "bucket_start_date": {
+    "BsonType": "Date",
+    "Index": {
+      "hasIndex": false,
+      "indexName": null
+    },
+    "Cardinality": 1626
+  },
+  "bucket_end_date": {
+    "BsonType": "Date",
+    "Index": {
+      "hasIndex": false,
+      "indexName": null
+    },
+    "Cardinality": 232
+  },
+  "transactions": {
+    "BsonType": "Array",
+    "Index": {
+      "hasIndex": false,
+      "indexName": null
+    },
+    "Cardinality": 1746
+  }
 }
 
 ```

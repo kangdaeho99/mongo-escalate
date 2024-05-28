@@ -1,4 +1,4 @@
-const { MongoClient } = require("mongodb");
+const { MongoClient, ObjectId, Binary, Decimal128} = require("mongodb");
 const tty = require("tty");
 
 const connectToMongo = async (mongoUri) => {
@@ -106,6 +106,9 @@ exports.explain = async (req, res) => {
     }
 };
 
+/* 전체 컬렉션 스키마 조회
+ * 컬렉션 속성 종류와 타입만 조회
+ */
 exports.getSampleSchema = async (req, res) => {
     const { mongoUri, databaseName, collectionName } = req.body;
     const uri = mongoUri || process.env.MONGO_URI;
@@ -123,7 +126,19 @@ exports.getSampleSchema = async (req, res) => {
             return;
         }
 
-        const schema = extractSchema(sampleDoc);
+        const indexes = await collection.listIndexes().toArray();
+        const indexMap = indexes.reduce((map, index) => {
+            map[index.key[Object.keys(index.key)[0]]] = index;
+            return map;
+        }, {});
+
+        const cardinalities = await getCollectionCardinality(uri, databaseName, collectionName);
+        const cardinalityMap = cardinalities.reduce((map, item) => {
+            map[item._id] = item.cardinality;
+            return map;
+        }, {});
+
+        const schema = extractSchema(sampleDoc, indexMap, cardinalityMap);
         console.log(schema);
         res.status(200).json(schema);
 
@@ -184,18 +199,9 @@ exports.recommend = async (req, res) => {
     }
 };
 
-exports.getCardinality = async (req, res) => {
-    const { mongoUri, databaseName, collectionName } = req.body;
 
-    try {
-        const cardinality = await getCollectionCardinality(mongoUri, databaseName, collectionName);
-        res.status(200).json(cardinality);
-    } catch (error) {
-        console.error("카디널리티 계산 중 오류 발생:", error);
-        res.status(500).json({ message: "카디널리티 계산 중 오류 발생" });
-    }
-};
-
+/* 인덱스 생성
+ */
 exports.createIndexOnKey = async (req, res) => {
     const { mongoUri, databaseName, collectionName, targetKey } = req.body;
 
@@ -215,6 +221,22 @@ exports.createIndexOnKey = async (req, res) => {
 
 }
 
+/* 컬렉션 카디널리티 반환 받기
+ */
+exports.getCardinality = async (req, res) => {
+    const { mongoUri, databaseName, collectionName } = req.body;
+
+    try {
+        const cardinality = await getCollectionCardinality(mongoUri, databaseName, collectionName);
+        res.status(200).json(cardinality);
+    } catch (error) {
+        console.error("카디널리티 계산 중 오류 발생:", error);
+        res.status(500).json({ message: "카디널리티 계산 중 오류 발생" });
+    }
+};
+
+/* 컬렉션 전체 스키마 카디널리티 조회
+ */
 const getCollectionCardinality = async (uri, databaseName, collectionName) => {
     const client  = await connectToMongo(uri);
 
@@ -275,11 +297,21 @@ const getCollectionCardinality = async (uri, databaseName, collectionName) => {
     }
 }
 
-const extractSchema = (doc) => {
+const extractSchema = (doc, indexMap, cardinalityMap) => {
     const schema = {};
     for (const key in doc) {
         if (doc.hasOwnProperty(key)) {
-            schema[key] = { BsonType: getBsonType(doc[key]) };
+            schema[key] = {
+                BsonType: getBsonType(doc[key]),
+                Index: indexMap[key] ? {
+                    hasIndex: true,
+                    indexName: indexMap[key].name
+                } : {
+                    hasIndex: false,
+                    indexName: null
+                },
+                Cardinality: cardinalityMap[key] || null
+            };
         }
     }
     return schema;
@@ -292,8 +324,15 @@ const getBsonType = (value) => {
     if (typeof value === 'string') {
         return 'String';
     }
+    if (Number.isInteger(value)) {
+        if (Number.isSafeInteger(value)) {
+            return 'Int32';
+        } else {
+            return 'Int64';
+        }
+    }
     if (typeof value === 'number') {
-        return 'Number'; // 정수 및 부동 소수점 모두 'Int'로 처리 (필요 시 세분화 가능)
+        return 'Double';
     }
     if (typeof value === 'boolean') {
         return 'Boolean';
@@ -301,7 +340,19 @@ const getBsonType = (value) => {
     if (value instanceof Date) {
         return 'Date';
     }
-    if (typeof value === 'object') {
+    if (value instanceof ObjectId) {
+        return 'ObjectId';
+    }
+    if (value instanceof Binary) {
+        return 'Binary';
+    }
+    if (value instanceof Decimal128) {
+        return 'Decimal128';
+    }
+    if (typeof value === 'object' && value !== null) {
+        if (value.$numberDecimal !== undefined) {
+            return 'Decimal128';
+        }
         return 'Object';
     }
     return 'Unknown';

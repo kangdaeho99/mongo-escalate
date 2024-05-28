@@ -3,7 +3,7 @@ const express = require('express');
 const loggingMiddleware = (req, res, next) => {
     // Capture the request body
     if (req.body) {
-        console.log(`${req.url} Request Body: ${JSON.stringify(req.body, null, 2)}`);
+        console.log(`${Date.now()}\t${req.url} Request Body: ${JSON.stringify(req.body, null, 2)}`);
     }
 
     const defaultWrite = res.write;
@@ -21,7 +21,7 @@ const loggingMiddleware = (req, res, next) => {
         }
         const body = Buffer.concat(chunks).toString('utf8');
 
-        console.log(`Response Body: ${body}`);
+        console.log(`${Date.now()}\tResponse Body: ${body}`);
 
         defaultEnd.apply(res, restArgs);
     };
