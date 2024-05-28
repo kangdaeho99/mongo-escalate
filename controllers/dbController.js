@@ -52,6 +52,9 @@ exports.aggregate = async (req, res) => {
     let evalData;
     try {
         evalData = eval(pipeline);
+        if (!Array.isArray(evalData)) {
+            throw new Error("잘못된 파이프라인 형식");
+        }
     } catch (error) {
         console.error("JSON parsing error:", error);
         return res.status(400).json({ message: "잘못된 파이프라인 형식" });
@@ -132,6 +135,8 @@ exports.getSampleSchema = async (req, res) => {
     }
 }
 
+/* 인덱스 추천
+ * 카디널리티 기반 계산 */
 exports.recommend = async (req, res) => {
     const { mongoUri, databaseName, collectionName, pipeline } = req.body;
     const uri = mongoUri;

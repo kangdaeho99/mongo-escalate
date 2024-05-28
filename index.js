@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const loggingMiddleWare = require("./middleware/logging");
 const dbRouter = require("./routes/dbRouter");
 
 const app = express();
@@ -12,6 +13,8 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json());
+
+app.use(loggingMiddleWare);
 
 app.use("/api/v1", dbRouter);
 
