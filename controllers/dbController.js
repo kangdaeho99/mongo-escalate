@@ -128,7 +128,9 @@ exports.getSampleSchema = async (req, res) => {
 
         const indexes = await collection.listIndexes().toArray();
         const indexMap = indexes.reduce((map, index) => {
-            map[index.key[Object.keys(index.key)[0]]] = index;
+            for (const key in index.key) {
+                map[key] = index;
+            }
             return map;
         }, {});
 
@@ -139,7 +141,6 @@ exports.getSampleSchema = async (req, res) => {
         }, {});
 
         const schema = extractSchema(sampleDoc, indexMap, cardinalityMap);
-        console.log(schema);
         res.status(200).json(schema);
 
     } catch (error) {
@@ -235,7 +236,7 @@ exports.getCardinality = async (req, res) => {
     }
 };
 
-/* 컬렉션 전체 스키마 카디널리티 조회
+/* 컬렉션의 모든 필드에 대한 카디널리티 계산
  */
 const getCollectionCardinality = async (uri, databaseName, collectionName) => {
     const client  = await connectToMongo(uri);
@@ -244,54 +245,63 @@ const getCollectionCardinality = async (uri, databaseName, collectionName) => {
         const database = client.db(databaseName);
         const collection = database.collection(collectionName);
 
+        // 컬렉션의 첫 번째 문서 가져오기
+        const sampleDoc = await collection.findOne();
+
+        if (!sampleDoc) {
+            console.log(`${collectionName} 컬렉션에 문서가 없습니다.`);
+            return [];
+        }
+
+        // 문서의 모든 필드에 대한 카디널리티 계산
+        const cardinalities = [];
+        for (const field in sampleDoc) {
+            try {
+                const cardinality = await getFieldCardinality(uri, databaseName, collectionName, field);
+                cardinalities.push({ _id: field, cardinality });
+            } catch (error) {
+                console.error(`${field} 필드의 카디널리티 계산 중 오류 발생:`, error);
+                cardinalities.push({ _id: field, cardinality: 0 });
+            }
+        }
+
+        return cardinalities;
+    } catch (error) {
+        console.error("카디널리티 계산 중 오류 발생:", error);
+        throw new Error("카디널리티 계산 중 오류 발생");
+    } finally {
+        await client.close();
+    }
+}
+
+/* 특정 필드의 카디널리티 계산
+ */
+const getFieldCardinality = async (uri, databaseName, collectionName, field) => {
+    const client  = await connectToMongo(uri);
+
+    try {
+        const database = client.db(databaseName);
+        const collection = database.collection(collectionName);
+
         const pipeline = [
             {
-                $project: {
-                    document: "$$ROOT"
+                $group: {
+                    _id: `$${field}`,
                 }
-            },
-            {
-                $unwind: {
-                    path: "$document",
-                    includeArrayIndex: 'string'
-                }
-            },
-            {
-                $replaceRoot: { newRoot: "$document" }
             },
             {
                 $group: {
-                    _id: "$_id",
-                    keys: { $mergeObjects: "$$ROOT" }
-                }
-            },
-            {
-                $project: {
-                    keys: { $objectToArray: "$keys" }
-                }
-            },
-            {
-                $unwind: "$keys"
-            },
-            {
-                $group: {
-                    _id: "$keys.k",
-                    uniqueValues: { $addToSet: "$keys.v" }
-                }
-            },
-            {
-                $project: {
-                    _id: 1,
-                    cardinality: { $size: "$uniqueValues" }
+                    _id: null,
+                    count: { $sum: 1 }
                 }
             }
         ];
 
         const result = await collection.aggregate(pipeline).toArray();
-        return result;
+        return result[0] ? result[0].count : 0;
     } catch (error) {
-        console.error("schema 조회시 오류 발생:", error);
-        throw new Error("schema 조회시 오류 발생");
+        console.error(`${field} 필드의 카디널리티 계산 중 오류 발생:`, error);
+        throw new Error(`${field} 필드의 카디널리티 계산 중 오류 발생`);
     } finally {
         await client.close();
     }
@@ -301,15 +311,21 @@ const extractSchema = (doc, indexMap, cardinalityMap) => {
     const schema = {};
     for (const key in doc) {
         if (doc.hasOwnProperty(key)) {
+            const indexes = [];
+            for (const indexKey in indexMap) {
+                if (indexKey.startsWith(key + '.') || indexKey === key) {
+                    indexes.push({
+                        hasIndex: true,
+                        indexName: indexMap[indexKey].name
+                    });
+                }
+            }
             schema[key] = {
                 BsonType: getBsonType(doc[key]),
-                Index: indexMap[key] ? {
-                    hasIndex: true,
-                    indexName: indexMap[key].name
-                } : {
+                Index: indexes.length > 0 ? indexes : [{
                     hasIndex: false,
                     indexName: null
-                },
+                }],
                 Cardinality: cardinalityMap[key] || null
             };
         }
