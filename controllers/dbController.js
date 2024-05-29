@@ -49,11 +49,11 @@ exports.connectMongo = async (req, res) => {
             return ;
         }
         if (e instanceof MongoNetworkError) {
-            const publicIp = await getPublicIp("ec2-13-125-76-129.ap-northeast-2.compute.amazonaws.com");
+            const publicIp = await getPublicIp("http://ec2-13-125-76-129.ap-northeast-2.compute.amazonaws.com");
             return res.status(403).json({ message: "DB 접근이 거부당했습니다.", publicIp: publicIp });
         }
         if (e instanceof MongoServerSelectionError) {
-            const publicIp = await getPublicIp("ec2-13-125-76-129.ap-northeast-2.compute.amazonaws.com");
+            const publicIp = await getPublicIp("http://ec2-13-125-76-129.ap-northeast-2.compute.amazonaws.com");
             return res.status(403).json({ message: "DB 접근이 거부당했습니다.", publicIp: publicIp });
         }
 
@@ -63,10 +63,22 @@ exports.connectMongo = async (req, res) => {
 
 const getPublicIp = async (hostname) => {
     try {
-        const addresses = await dns.lookup(hostname);
-        return addresses.address;
+        const response = await fetch(`https://dns.google/resolve?name=ec2-13-125-76-129.ap-northeast-2.compute.amazonaws.com&type=A`);
+
+        // Check if the response is JSON
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            const data = await response.json();
+            if (data.Answer && data.Answer.length > 0) {
+                return data.Answer[0].data;
+            } else {
+                throw new Error("No A records found");
+            }
+        } else {
+            throw new Error("Unexpected response format");
+        }
     } catch (error) {
-        console.error(`Failed to lookup IP for ${hostname}:`, error);
+        console.error('Failed to retrieve public IP:', error);
         return null;
     }
 };
