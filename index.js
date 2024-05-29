@@ -8,7 +8,7 @@ const app = express();
 const port = 3000;
 
 const corsOptions = {
-    origin: ["http://localhost:3000", "https://mongo-es-front.vercel.app/"],
+    origin: ["http://localhost:3000", "https://mongo-es-front.vercel.app/", "https://mongo-es.vercel.app/"],
     methods: ["POST", "GET", "DELETE", "PATCH", "PUT"],
 };
 
