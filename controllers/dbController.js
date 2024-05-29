@@ -1,10 +1,14 @@
-const { MongoClient, ObjectId, Binary, Decimal128} = require("mongodb");
-const tty = require("tty");
+const { MongoClient, ObjectId, Binary, Decimal128, MongoParseError, MongoNetworkError, MongoServerSelectionError} = require("mongodb");
+const dns = require("dns").promises;
 
 const connectToMongo = async (mongoUri) => {
-    const client = new MongoClient(mongoUri);
-    await client.connect();
-    return client;
+    try {
+        const client = new MongoClient(mongoUri, { serverSelectionTimeoutMS: 3000 });
+        await client.connect();
+        return client;
+    } catch (error) {
+        throw error;
+    }
 };
 
 exports.connectMongo = async (req, res) => {
@@ -39,8 +43,31 @@ exports.connectMongo = async (req, res) => {
         await client.close();
         res.status(200).json({ treeData: treeData });
     } catch (e) {
-        console.error(e);
-        res.status(500).json({ message: "Error connecting to MongoDB" });
+
+        if (e instanceof MongoParseError) {
+            res.status(400).json({ message: "올바르지않은 DB 정보입니다." });
+            return ;
+        }
+        if (e instanceof MongoNetworkError) {
+            const publicIp = await getPublicIp("ec2-13-125-76-129.ap-northeast-2.compute.amazonaws.com");
+            return res.status(403).json({ message: "DB 접근이 거부당했습니다.", publicIp: publicIp });
+        }
+        if (e instanceof MongoServerSelectionError) {
+            const publicIp = await getPublicIp("ec2-13-125-76-129.ap-northeast-2.compute.amazonaws.com");
+            return res.status(403).json({ message: "DB 접근이 거부당했습니다.", publicIp: publicIp });
+        }
+
+        res.status(500).json({ message: "DB 접속 실패", error: e.message });
+    }
+};
+
+const getPublicIp = async (hostname) => {
+    try {
+        const addresses = await dns.lookup(hostname);
+        return addresses.address;
+    } catch (error) {
+        console.error(`Failed to lookup IP for ${hostname}:`, error);
+        return null;
     }
 };
 
