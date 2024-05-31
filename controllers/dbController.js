@@ -84,12 +84,48 @@ const getPublicIp = async (hostname) => {
 };
 
 exports.runPartialPipeline = async (req, res) => {
+    const { mongoUri, databaseName, collectionName, pipeline, step } = req.body;
+
+    let evalData;
+    try {
+        evalData = eval(pipeline);
+        if (!Array.isArray(evalData)) {
+            throw new Error("잘못된 파이프라인 형식");
+        }
+    } catch (error) {
+        console.error("JSON parsing error:", error);
+        return res.status(400).json({ message: "잘못된 파이프라인 형식" });
+    }
+    const hasLimit = evalData.some(stage => Object.hasOwnProperty.call(stage, '$limit'));
+    const hasSkip = evalData.some(stage => Object.hasOwnProperty.call(stage, '$skip'));
+
+    if (!hasLimit) {
+        evalData.push({ $limit: 10 });
+    }
+
+    if (!hasSkip) {
+        evalData.push({ $skip: 0 });
+    }
+
+    evalData = evalData.slice(0, step + 1);
+    console.log(evalData);
+
+    try {
+        const client = await connectToMongo(mongoUri);
+        const database = client.db(databaseName);
+        const collection = database.collection(collectionName);
+        const results = await collection.aggregate(evalData).toArray();
+        await client.close();
+        res.status(200).json(results);
+    } catch (error) {
+        console.error("Aggregation 실행 중 오류 발생:", error);
+        res.status(500).json({ message: "Aggregation 실행 중 오류 발생" });
+    }
 }
 
 exports.aggregate = async (req, res) => {
     const { mongoUri, databaseName, collectionName, pipeline } = req.body;
     let index = req.body.index;
-    const uri = mongoUri;
 
     let evalData;
     try {
@@ -116,7 +152,7 @@ exports.aggregate = async (req, res) => {
     }
 
     try {
-        const client = await connectToMongo(uri);
+        const client = await connectToMongo(mongoUri);
         const database = client.db(databaseName);
         const collection = database.collection(collectionName);
         const results = await collection.aggregate(evalData).toArray();
