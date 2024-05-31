@@ -66,7 +66,8 @@ Request Body:
         "count": { "$sum": 1 }
       }
     }
-  ]
+  ],
+  "index" : 0
 }
 ```
 Response:  
@@ -87,6 +88,43 @@ Status Code: `200`
   }
 ]
 ```
+# 부분 Aggregation 파이프라인 실행
+
+- 주어진 Aggregation 파이프라인의 특정 단계까지만 실행하고 결과를 반환
+
+## API Endpoint
+
+URL: `/api/v1/db/aggregate/part`  
+Method: `POST`
+
+## Request Body
+
+```json
+{
+  "mongoUri": "mongodb+srv://example.mongodb.net/",
+  "databaseName": "myDatabase",
+  "collectionName": "users",
+  "pipeline": [
+    {
+      "$match": {
+        "age": { "$gte": 18 }
+      }
+    },
+    {
+      "$group": {
+        "_id": "$country",
+        "count": { "$sum": 1 }
+      }
+    },
+    {
+      "$sort": { "count": -1 }
+    }
+  ],
+  "step": 2
+}
+```
+
+
 
 # Aggregation 실행 계획 가져오기
 
