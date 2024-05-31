@@ -84,51 +84,44 @@ const getPublicIp = async (hostname) => {
 };
 
 exports.runPartialPipeline = async (req, res) => {
-    const { mongoUri, databaseName, collectionName, pipeline, step } = req.body;
-
-    let pipelineObj;
-    try {
-        pipelineObj = eval(pipeline);
-        if (!Array.isArray(pipelineObj)) {
-            throw new Error("잘못된 파이프라인 형식");
-        }
-    } catch (error) {
-        console.error("JSON parsing error:", error);
-        return res.status(400).json({ message: "잘못된 파이프라인 형식" });
-    }
-
-    let partialPipeline = JSON.stringify(JSON.parse(pipeline).slice(0, step));
-    partialPipeline = await addPagination(partialPipeline, 0);
-
-    try {
-        const result = await processPipeline(mongoUri, databaseName, collectionName, partialPipeline);
-        res.status(200).json(result);
-    } catch (error) {
-        console.error("Aggregation 실행 중 오류 발생:", error);
-        res.status(500).json({ message: "Aggregation 실행 중 오류 발생" });
-    }
 }
 
 exports.aggregate = async (req, res) => {
     const { mongoUri, databaseName, collectionName, pipeline } = req.body;
     let index = req.body.index;
+    const uri = mongoUri;
 
-    let pipelineObj;
+    let evalData;
     try {
-        pipelineObj = eval(pipeline);
-        if (!Array.isArray(pipelineObj)) {
+        evalData = eval(pipeline);
+        if (!Array.isArray(evalData)) {
             throw new Error("잘못된 파이프라인 형식");
         }
     } catch (error) {
         console.error("JSON parsing error:", error);
         return res.status(400).json({ message: "잘못된 파이프라인 형식" });
     }
+    const hasLimit = evalData.some(stage => Object.hasOwnProperty.call(stage, '$limit'));
+    const hasSkip = evalData.some(stage => Object.hasOwnProperty.call(stage, '$skip'));
 
-    pipelineObj = await addPagination(pipelineObj, index);
-    
+    if (!hasLimit) {
+        evalData.push({ $limit: 10 });
+    }
+
+    if (index === undefined) {
+        index = 0;
+    }
+    if (!hasSkip) {
+        evalData.push({ $skip: index });
+    }
+
     try {
-        const result = await processPipeline(mongoUri, databaseName, collectionName, pipelineObj)
-        res.status(200).json(result);
+        const client = await connectToMongo(uri);
+        const database = client.db(databaseName);
+        const collection = database.collection(collectionName);
+        const results = await collection.aggregate(evalData).toArray();
+        await client.close();
+        res.status(200).json(results);
     } catch (error) {
         console.error("Aggregation 실행 중 오류 발생:", error);
         res.status(500).json({ message: "Aggregation 실행 중 오류 발생" });
@@ -141,17 +134,7 @@ exports.explain = async (req, res) => {
     const { mongoUri, databaseName, collectionName, pipeline } = req.body;
     const uri = mongoUri || process.env.MONGO_URI;
 
-    let evalData;
-    try {
-        evalData = eval(pipeline);
-        if (!Array.isArray(evalData)) {
-            throw new Error("잘못된 파이프라인 형식");
-        }
-    } catch (error) {
-        console.error("JSON parsing error:", error);
-        return res.status(400).json({ message: "잘못된 파이프라인 형식" });
-    }
-
+    let evalData = eval(pipeline);
     try {
         const client = await connectToMongo(uri);
         const database = client.db(databaseName);
@@ -164,38 +147,6 @@ exports.explain = async (req, res) => {
         res.status(500).json({ message: "Explain 실행 중 오류 발생" });
     }
 };
-
-const addPagination = async (pipelineObj, index) => {
-    const hasLimit = pipelineObj.some(stage => Object.hasOwnProperty.call(stage, '$limit'));
-    const hasSkip = pipelineObj.some(stage => Object.hasOwnProperty.call(stage, '$skip'));
-
-    if (!hasLimit) {
-        pipelineObj.push({ $limit: 10 });
-    }
-
-    if (index === undefined) {
-        index = 0;
-    }
-    if (!hasSkip) {
-        pipelineObj.push({ $skip: index });
-    }
-
-    return pipelineObj;
-}
-
-const processPipeline = async (mongoUri, databaseName, collectionName, pipeline) => {
-    try {
-        const client = await connectToMongo(mongoUri);
-        const database = client.db(databaseName);
-        const collection = database.collection(collectionName);
-        const result =  await collection.aggregate(pipeline).toArray();
-        await client.close();
-        return result;
-    } catch (error) {
-        console.error("Aggregation 실행 중 오류 발생:", error);
-        throw error;
-    }
-}
 
 /* 전체 컬렉션 스키마 조회
  * 컬렉션 속성 종류와 타입만 조회
