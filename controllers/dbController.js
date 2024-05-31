@@ -96,6 +96,10 @@ exports.runPartialPipeline = async (req, res) => {
         console.error("JSON parsing error:", error);
         return res.status(400).json({ message: "잘못된 파이프라인 형식" });
     }
+
+    evalData = evalData.slice(0, step + 1);
+    console.log(evalData);
+
     const hasLimit = evalData.some(stage => Object.hasOwnProperty.call(stage, '$limit'));
     const hasSkip = evalData.some(stage => Object.hasOwnProperty.call(stage, '$skip'));
 
@@ -107,8 +111,7 @@ exports.runPartialPipeline = async (req, res) => {
         evalData.push({ $skip: 0 });
     }
 
-    evalData = evalData.slice(0, step + 1);
-    console.log(evalData);
+
 
     try {
         const client = await connectToMongo(mongoUri);
