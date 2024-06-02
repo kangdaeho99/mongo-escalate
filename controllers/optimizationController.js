@@ -11,40 +11,103 @@ const connectToMongo = async (mongoUri) => {
 };
 
 exports.optimizePipeline = async (req, res) => {
-    const { mongoUri, databaseName, collectionName, pipeline } = req.body;
+    const { mongoUri, databaseName, collectionName } = req.body;
+    let pipeline = req.body.pipeline;
+
+    pipeline = [
+        {
+            $match: {
+                birthdate: { $gte: new Date("1990-01-01") }
+            }
+        },
+        {
+            $lookup: {
+                from: "accounts",
+                localField: "accounts",
+                foreignField: "account_id",
+                as: "account_details"
+            }
+        },
+        {
+            $unwind: "$account_details"
+        },{
+            $match: {
+                name : "Elizabeth Ray"
+            }
+        },
+        {
+            $match: {
+                "account_details.limit": { $gte: 1000 }
+            }
+        },
+        {
+            $project: {
+                _id: 0,
+                username: 1,
+                name: 1,
+                email: 1,
+                accountLimit: "$account_details.limit"
+            }
+        }
+    ]
 
     const fields = await getAllFiled(mongoUri, databaseName, collectionName);
     console.log(fields);
 
-    mergeMatch(pipeline, originFiled); // pipeline이 바뀜
+    const matchCategory = mergeMatch(pipeline, fields); // pipeline이 바뀜
+    const canOptimizedFiled = findDependentFields(mongoUri, databaseName, collectionName, pipeline);
 
-    res.status(200).json(fields);
+    console.log(matchCategory);
+    console.log(canOptimizedFiled);
+
+    const result = {};
+    result["pipeOptimize"] = ({
+        optimizePipeline : pipeline,
+        optimizeCategory : matchCategory
+    })
+    result["indexOptimize"] = (canOptimizedFiled);
+
+    res.status(200).json(result);
 }
-
-// 순서 오류
-// match가 맨 앞
-// lookup, match 구분해서 순서 조정
-
-const checkMatch = (pipeline) => {
-
-    for (const [index, stage] of pipeline.entries()) {
-        console.log(index, stage);
-    }
-}
-
 
 /* Match 스테이지 분할된 경우 병합 처리.
  */
 const mergeMatch = (pipeline, originFiled) => {
+    const category = {
+        isMerged: false,
+        isChangedOrder: false
+    };
+
+
+    const matchStep = getFirstMatchIndex(pipeline);
+
     const matchIndexes = collectMatchIndexes(pipeline);
-    const finalMatch = mergeMatchConditions(pipeline, matchIndexes, originFiled);
+    const finalMatch = mergeMatchConditions(pipeline, matchIndexes, originFiled, category);
     removeOriginFilterMatches(pipeline, matchIndexes, originFiled);
 
-    if (finalMatch.$and.length > 0) {
+    if (finalMatch && Object.keys(finalMatch).length > 0) {
         pipeline.unshift({ $match: finalMatch });
+        console.log(getFirstMatchIndex(pipeline));
+        if (matchStep !== getFirstMatchIndex(pipeline)) {
+            category.isChangedOrder = true;
+        }
     }
+
+    if (Object.keys(finalMatch).length > 1 || ('$and' in finalMatch && finalMatch.$and.length > 1)) {
+        category.isMerged = true;
+    }
+
+    return category;
 }
 
+const getFirstMatchIndex = (pipeline) => {
+    for (const [index, stage] of pipeline.entries()) {
+        if (stage["$match"]) {
+            return index;
+        }
+    }
+    return -1;
+}
 
 const collectMatchIndexes = (pipeline) => {
     const matchIndexes = [];
@@ -65,11 +128,14 @@ const isOriginFilterMatch = (matchFiled, originFiled) => {
     return true;
 }
 
-const mergeMatchConditions = (pipeline, matchIndexes, originFiled) => {
+const mergeMatchConditions = (pipeline, matchIndexes, originFiled, category) => {
     const mergedMatchConditions = {};
+    let hasMergeableConditions = false;
+
     for (const i of matchIndexes) {
         const matchFiled = pipeline[i]["$match"];
         if (isOriginFilterMatch(matchFiled, originFiled)) {
+            hasMergeableConditions = true;
             for (const [key, value] of Object.entries(matchFiled)) {
                 if (!mergedMatchConditions[key]) {
                     mergedMatchConditions[key] = [value];
@@ -80,16 +146,30 @@ const mergeMatchConditions = (pipeline, matchIndexes, originFiled) => {
         }
     }
 
-    const finalMatch = { $and: [] };
+    if (!hasMergeableConditions) {
+        return null;
+    }
+
+    const finalMatch = {};
+    const andConditions = [];
+
     for (const [key, value] of Object.entries(mergedMatchConditions)) {
         if (value.length > 1) {
-            const andConditions = value.map(v => ({ [key]: v }));
-            finalMatch.$and.push({ $and: andConditions });
+            const andCondition = value.map(v => ({ [key]: v }));
+            andConditions.push({ $and: andCondition });
         } else {
-            finalMatch.$and.push({ [key]: value[0] });
+            finalMatch[key] = value[0];
         }
     }
-    return finalMatch;
+
+    if (andConditions.length > 0) {
+        if (Object.keys(finalMatch).length > 0) {
+            andConditions.push(finalMatch);
+        }
+        return { $and: andConditions };
+    } else {
+        return finalMatch;
+    }
 }
 
 const removeOriginFilterMatches = (pipeline, matchIndexes, originFiled) => {
@@ -100,27 +180,6 @@ const removeOriginFilterMatches = (pipeline, matchIndexes, originFiled) => {
         }
     }
 }
-
-/*
-// 테스트를 위해 예제 파이프라인과 필드를 정의
-const pipeline = [
-    { $match: { limit: { $gte: 5000 } } },
-    { $match: { limit: { $lte: 7000 } } },
-    { $match: { field1: "value1" } },
-    { $match: { field2: "value2" } },
-    {
-        $projct : { "_id" : 0}
-    },
-    { $match: { field1: { $gte: 10 } } }
-]
-
-const originFiled = ["field1", "field2", "limit"];
-
-mergeMatch(pipeline, originFiled);
-
-console.log(JSON.stringify(pipeline, null, 2));
-
- */
 
 
 // 인덱스 필드 조회
@@ -207,22 +266,6 @@ const findDependentFields = async (mongoUri, databaseName, collectionName, pipel
 
     return result;
 }
-
-(async () => {
-    const mongoUri = "mongodb+srv://kkwjdfo:9k2wNUnStGjzpYIH@cluster0.wqyssre.mongodb.net/";
-    const databaseName = "sample_analytics";
-    const collectionName = 'customers';
-    const pipeline = [
-        {
-            $match: {
-                name : "Elizabeth Ray"
-            }
-        }
-    ];
-
-    const dependentFields = await findDependentFields(mongoUri, databaseName, collectionName, pipeline);
-    console.log(dependentFields);
-})();
 
 /* 전체 컬렉션 필드 목록 조회
  */
