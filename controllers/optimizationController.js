@@ -106,7 +106,7 @@ const mergeMatch = (pipeline, originFiled) => {
         }
     }
 
-    if (Object.keys(finalMatch).length > 1 || ('$and' in finalMatch && finalMatch.$and.length > 1)) {
+    if (finalMatch && (Object.keys(finalMatch).length > 1 || ('$and' in finalMatch && finalMatch.$and.length > 1))) {
         category.isMerged = true;
     }
 
