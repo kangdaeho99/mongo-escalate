@@ -25,14 +25,52 @@ exports.optimizePipeline = async (req, res) => {
         return res.status(400).json({ message: "잘못된 파이프라인 형식" });
     }
 
+    pipeline =  [
+        {
+            $match: {
+                birthdate: { $gte: new Date("1990-01-01") }
+            }
+        },
+        {
+            $lookup: {
+                from: "accounts",
+                localField: "accounts",
+                foreignField: "account_id",
+                as: "account_details"
+            }
+        },
+        {
+            $unwind: "$account_details"
+        },{
+            $match: {
+                name : "Elizabeth Ray"
+            }
+        },
+        {
+            $match: {
+                "account_details.limit": { $gte: 1000 }
+            }
+        },
+        {
+            $project: {
+                _id: 0,
+                username: 1,
+                name: 1,
+                email: 1,
+                accountLimit: "$account_details.limit"
+            }
+        }
+    ]
+
 
     const fields = await getAllFiled(mongoUri, databaseName, collectionName);
     console.log(fields);
 
     const matchCategory = mergeMatch(pipeline, fields); // pipeline이 바뀜
-    const canOptimizedFiled = findDependentFields(mongoUri, databaseName, collectionName, pipeline);
+    const canOptimizedFiled = await findDependentFields(mongoUri, databaseName, collectionName, pipeline);
 
-    console.log(matchCategory);
+    //console.log(matchCategory);
+    console.log("Index")
     console.log(canOptimizedFiled);
 
     const result = {};
@@ -220,14 +258,14 @@ const extractMatchFields = (pipeline) => {
 // 의존성 인덱스 필드 찾기
 const findDependentFields = async (mongoUri, databaseName, collectionName, pipeline) => {
     const indexFields = await getIndexFields(mongoUri, databaseName, collectionName);
-    //console.log(`indexField ${indexFields}`);
+    console.log(`indexField ${indexFields}`);
     const matchFields = extractMatchFields(pipeline);
-    //console.log(`matchField ${matchFields}`);
+    console.log(`matchField ${matchFields}`);
     const result = [];
 
     for (let indexField of indexFields) {
         const dependentFields = await checkFunctionalDependency(mongoUri, databaseName, collectionName, indexField);
-        //console.log(dependentFields);
+        console.log(dependentFields);
 
         dependentFields.forEach(dependentField => {
             if (matchFields.includes(dependentField)) {
@@ -238,6 +276,7 @@ const findDependentFields = async (mongoUri, databaseName, collectionName, pipel
             }
         });
     }
+    console.log(result);
 
     return result;
 }
