@@ -16,6 +16,8 @@ exports.optimizePipeline = async (req, res) => {
     const fields = await getAllFiled(mongoUri, databaseName, collectionName);
     console.log(fields);
 
+    mergeMatch(pipeline, originFiled); // pipeline이 바뀜
+
     res.status(200).json(fields);
 }
 
@@ -99,6 +101,7 @@ const removeOriginFilterMatches = (pipeline, matchIndexes, originFiled) => {
     }
 }
 
+/*
 // 테스트를 위해 예제 파이프라인과 필드를 정의
 const pipeline = [
     { $match: { limit: { $gte: 5000 } } },
@@ -117,6 +120,109 @@ mergeMatch(pipeline, originFiled);
 
 console.log(JSON.stringify(pipeline, null, 2));
 
+ */
+
+
+// 인덱스 필드 조회
+const getIndexFields = async (mongoUri, databaseName, collectionName) => {
+    const client = await connectToMongo(mongoUri);
+    const database = client.db(databaseName);
+    const collection = database.collection(collectionName);
+
+    const indexes = await collection.indexes();
+    const indexFields = indexes.flatMap(index => Object.keys(index.key));
+
+    await client.close();
+    return [...new Set(indexFields)];
+}
+
+// 함수적 종속성 찾기
+const checkFunctionalDependency = async (mongoUri, databaseName, collectionName, usernameField) => {
+    const client = await connectToMongo(mongoUri);
+    const database = client.db(databaseName);
+    const collection = database.collection(collectionName);
+
+    const fields = await getAllFiled(mongoUri, databaseName, collectionName);
+    const dependentFields = [];
+
+    for (let field of fields) {
+        if (field !== usernameField) {
+            const pipeline = [
+                {
+                    $group: {
+                        _id: `$${usernameField}`,
+                        uniqueValues: { $addToSet: `$${field}` }
+                    }
+                },
+                {
+                    $match: { uniqueValues: { $size: 1 } }
+                }
+            ];
+
+            const result = await collection.aggregate(pipeline).toArray();
+            if (result.length > 0) {
+                dependentFields.push(field);
+            }
+        }
+    }
+
+    await client.close();
+
+    return dependentFields;
+}
+
+const extractMatchFields = (pipeline) => {
+    const matchFields = new Set();
+
+    for (const stage of pipeline) {
+        if (stage["$match"]) {
+            Object.keys(stage["$match"]).forEach(field => matchFields.add(field));
+        }
+    }
+
+    return [...matchFields];
+}
+
+// 의존성 인덱스 필드 찾기
+const findDependentFields = async (mongoUri, databaseName, collectionName, pipeline) => {
+    const indexFields = await getIndexFields(mongoUri, databaseName, collectionName);
+    //console.log(`indexField ${indexFields}`);
+    const matchFields = extractMatchFields(pipeline);
+    //console.log(`matchField ${matchFields}`);
+    const result = [];
+
+    for (let indexField of indexFields) {
+        const dependentFields = await checkFunctionalDependency(mongoUri, databaseName, collectionName, indexField);
+        //console.log(dependentFields);
+
+        dependentFields.forEach(dependentField => {
+            if (matchFields.includes(dependentField)) {
+                result.push({
+                    dependentFiled: dependentField,
+                    determinantField: indexField
+                });
+            }
+        });
+    }
+
+    return result;
+}
+
+(async () => {
+    const mongoUri = "mongodb+srv://kkwjdfo:9k2wNUnStGjzpYIH@cluster0.wqyssre.mongodb.net/";
+    const databaseName = "sample_analytics";
+    const collectionName = 'customers';
+    const pipeline = [
+        {
+            $match: {
+                name : "Elizabeth Ray"
+            }
+        }
+    ];
+
+    const dependentFields = await findDependentFields(mongoUri, databaseName, collectionName, pipeline);
+    console.log(dependentFields);
+})();
 
 /* 전체 컬렉션 필드 목록 조회
  */
