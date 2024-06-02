@@ -12,44 +12,19 @@ const connectToMongo = async (mongoUri) => {
 
 exports.optimizePipeline = async (req, res) => {
     const { mongoUri, databaseName, collectionName } = req.body;
-    let pipeline = req.body.pipeline;
+    let pipelineStr = req.body.pipeline;
 
-    pipeline = [
-        {
-            $match: {
-                birthdate: { $gte: new Date("1990-01-01") }
-            }
-        },
-        {
-            $lookup: {
-                from: "accounts",
-                localField: "accounts",
-                foreignField: "account_id",
-                as: "account_details"
-            }
-        },
-        {
-            $unwind: "$account_details"
-        },{
-            $match: {
-                name : "Elizabeth Ray"
-            }
-        },
-        {
-            $match: {
-                "account_details.limit": { $gte: 1000 }
-            }
-        },
-        {
-            $project: {
-                _id: 0,
-                username: 1,
-                name: 1,
-                email: 1,
-                accountLimit: "$account_details.limit"
-            }
+    let pipeline = eval(pipelineStr);
+    try {
+        pipeline = eval(pipelineStr);
+        if (!Array.isArray(pipeline)) {
+            throw new Error("잘못된 파이프라인 형식");
         }
-    ]
+    } catch (error) {
+        console.error("JSON parsing error:", error);
+        return res.status(400).json({ message: "잘못된 파이프라인 형식" });
+    }
+
 
     const fields = await getAllFiled(mongoUri, databaseName, collectionName);
     console.log(fields);
